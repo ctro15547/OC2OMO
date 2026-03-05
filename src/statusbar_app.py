@@ -75,7 +75,7 @@ class StatusBarApp:
         2. 分隔线
         3. 路径输入框（NSTextField 嵌入 NSMenuItem）
         4. 分隔线
-        5. cc 单选项
+        5. oc 单选项
         6. omo 单选项
         """
         try:
@@ -90,7 +90,7 @@ class StatusBarApp:
             menu.addItem_(version_item)
             self.menu_item_version = version_item
 
-            # --- 1b. cc 模式提示（cc 时显示，omo 时隐藏）---
+            # --- 1b. oc 模式提示（oc 时显示，omo 时隐藏）---
             hint_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
                 "⚠️ 升级 omo 请先切换到 omo 模式", None, ""
             )
@@ -119,13 +119,13 @@ class StatusBarApp:
             # --- 4. 分隔线 ---
             menu.addItem_(NSMenuItem.separatorItem())
 
-            # --- 5. cc 单选项 ---
-            cc_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-                "cc", "onModeSwitch:", ""
+            # --- 5. oc 单选项 ---
+            oc_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "oc", "onModeSwitch:", ""
             )
-            cc_item.setTarget_(self)
-            menu.addItem_(cc_item)
-            self.menu_item_cc = cc_item
+            oc_item.setTarget_(self)
+            menu.addItem_(oc_item)
+            self.menu_item_oc = oc_item
 
             # --- 6. omo 单选项 ---
             omo_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
@@ -176,27 +176,27 @@ class StatusBarApp:
         try:
             title = sender.title()
             # 标题可能带有警告后缀，只取前缀判断模式
-            if title.startswith("cc"):
-                mode = "cc"
+            if title.startswith("oc"):
+                mode = "oc"
             elif title.startswith("omo"):
                 mode = "omo"
             else:
                 return
 
-            if mode == "cc":
-                self.mode_switcher.switch_to_cc()
+            if mode == "oc":
+                self.mode_switcher.switch_to_oc()
             elif mode == "omo":
                 # 每次都尝试切换，支持用户补上备份后重试
                 self.mode_switcher.switch_to_omo()
                 new_mode = self.mode_switcher.get_current_mode()
 
-                if new_mode == "cc":
-                    # 切换失败，保持 cc 选中状态并在 omo 右侧持续显示警告
+                if new_mode == "oc":
+                    # 切换失败，保持 oc 选中状态并在 omo 右侧持续显示警告
                     self._show_notification(
                         "无法切换到 omo 模式",
                         "未找到 omo 插件版本备份或没安装 omo"
                     )
-                    self.menu_item_cc.setState_(NSOnState)
+                    self.menu_item_oc.setState_(NSOnState)
                     self.menu_item_omo.setState_(NSOffState)
                     return
                 else:
@@ -204,12 +204,12 @@ class StatusBarApp:
                     self._clear_menu_alert()
 
             # 更新单选状态：被点击项选中，另一项取消选中
-            if mode == "cc":
-                self.menu_item_cc.setState_(NSOnState)
+            if mode == "oc":
+                self.menu_item_oc.setState_(NSOnState)
                 self.menu_item_omo.setState_(NSOffState)
             elif mode == "omo":
                 self.menu_item_omo.setState_(NSOnState)
-                self.menu_item_cc.setState_(NSOffState)
+                self.menu_item_oc.setState_(NSOffState)
 
             # 切换后重新检测版本并更新标签和提示行
             plugin_list = self.config_reader.get_plugin_list()
@@ -307,14 +307,14 @@ class StatusBarApp:
                 if hasattr(self, "menu_item_cc"):
                     self.menu_item_cc.setState_(NSOffState)
             else:
-                # 未检测到 omo 插件：版本显示 None，选中 cc，显示提示行
+                # 未检测到 omo 插件：版本显示 None，选中 oc，显示提示行
                 if hasattr(self, "menu_item_version"):
                     self.update_version_label(None)
                 if hasattr(self, "menu_item_hint"):
-                    # cc 模式下显示升级提示
+                    # oc 模式下显示升级提示
                     self.menu_item_hint.setHidden_(False)
-                if hasattr(self, "menu_item_cc"):
-                    self.menu_item_cc.setState_(NSOnState)
+                if hasattr(self, "menu_item_oc"):
+                    self.menu_item_oc.setState_(NSOnState)
                 if hasattr(self, "menu_item_omo"):
                     self.menu_item_omo.setState_(NSOffState)
 

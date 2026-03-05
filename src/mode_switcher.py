@@ -1,13 +1,13 @@
 """
 模式切换模块
-负责处理 cc / omo 单选切换逻辑，修改 plugin 列表并写回配置
+负责处理 oc / omo 单选切换逻辑，修改 plugin 列表并写回配置
 """
 
 import os
 
 
 class ModeSwitcher:
-    """cc/omo 模式切换模块"""
+    """oc/omo 模式切换模块"""
 
     def __init__(self, config_reader, plugin_detector):
         """
@@ -20,13 +20,13 @@ class ModeSwitcher:
         # 从配置文件路径推导出配置目录，用于读写 omo_plugin.txt
         self.config_dir = os.path.dirname(self.config_reader.config_path)
 
-    def switch_to_cc(self) -> None:
+    def switch_to_oc(self) -> None:
         """
-        切换到 cc 模式：
+        切换到 oc 模式：
         1. 从 plugin 列表中移除 oh-my-opencode 条目
         2. 将该条目备份到 omo_plugin.txt
         3. 写回配置
-        若已是 cc 模式（未找到 omo 条目），打印日志说明。
+        若已是 oc 模式（未找到 omo 条目），打印日志说明。
         """
         try:
             config = self.config_reader.read_config()
@@ -36,8 +36,8 @@ class ModeSwitcher:
             omo_entry = self.plugin_detector.find_omo_plugin(plugin_list)
 
             if omo_entry is None:
-                # 已经是 cc 模式，无需操作
-                print("[ModeSwitcher] 当前已是 cc 模式，plugin 列表中未找到 oh-my-opencode 条目")
+                # 已经是 oc 模式，无需操作
+                print("[ModeSwitcher] 当前已是 oc 模式，plugin 列表中未找到 oh-my-opencode 条目")
                 return
 
             # 备份 omo 条目到 omo_plugin.txt
@@ -49,10 +49,10 @@ class ModeSwitcher:
             # 更新配置并写回
             config["plugin"] = plugin_list
             self.config_reader.write_config(config)
-            print(f"[ModeSwitcher] 已切换到 cc 模式，移除条目：{omo_entry}")
+            print(f"[ModeSwitcher] 已切换到 oc 模式，移除条目：{omo_entry}")
 
         except Exception as e:
-            print(f"[ModeSwitcher] 切换到 cc 模式时发生错误：{e}")
+            print(f"[ModeSwitcher] 切换到 oc 模式时发生错误：{e}")
 
     def switch_to_omo(self) -> None:
         """
@@ -94,13 +94,13 @@ class ModeSwitcher:
     def get_current_mode(self) -> str:
         """
         检测当前模式。
-        plugin 列表中包含 oh-my-opencode 时返回 'omo'，否则返回 'cc'。
+        plugin 列表中包含 oh-my-opencode 时返回 'omo'，否则返回 'oc'。
         """
         try:
             plugin_list = self.config_reader.get_plugin_list()
             omo_entry = self.plugin_detector.find_omo_plugin(plugin_list)
-            return "omo" if omo_entry is not None else "cc"
+            return "omo" if omo_entry is not None else "oc"
         except Exception as e:
             print(f"[ModeSwitcher] 检测当前模式时发生错误：{e}")
-            # 异常时默认返回 cc 模式
-            return "cc"
+            # 异常时默认返回 oc 模式
+            return "oc"
