@@ -175,17 +175,39 @@ class StatusBarApp:
         """
         try:
             title = sender.title()
+            # 标题可能带有警告后缀，只取前缀判断模式
+            if title.startswith("cc"):
+                mode = "cc"
+            elif title.startswith("omo"):
+                mode = "omo"
+            else:
+                return
 
-            if title == "cc":
+            if mode == "cc":
                 self.mode_switcher.switch_to_cc()
-            elif title == "omo":
+            elif mode == "omo":
+                # 每次都尝试切换，支持用户补上备份后重试
                 self.mode_switcher.switch_to_omo()
+                new_mode = self.mode_switcher.get_current_mode()
+
+                if new_mode == "cc":
+                    # 切换失败，保持 cc 选中状态并在 omo 右侧持续显示警告
+                    self._show_notification(
+                        "无法切换到 omo 模式",
+                        "未找到 omo 插件版本备份或没安装 omo"
+                    )
+                    self.menu_item_cc.setState_(NSOnState)
+                    self.menu_item_omo.setState_(NSOffState)
+                    return
+                else:
+                    # 切换成功，清除之前可能存在的警告提示
+                    self._clear_menu_alert()
 
             # 更新单选状态：被点击项选中，另一项取消选中
-            if title == "cc":
+            if mode == "cc":
                 self.menu_item_cc.setState_(NSOnState)
                 self.menu_item_omo.setState_(NSOffState)
-            elif title == "omo":
+            elif mode == "omo":
                 self.menu_item_omo.setState_(NSOnState)
                 self.menu_item_cc.setState_(NSOffState)
 
@@ -298,6 +320,67 @@ class StatusBarApp:
 
         except Exception as e:
             print(f"[StatusBarApp] 自动检测失败：{e}")
+
+    def _show_notification(self, title: str, message: str) -> None:
+        """
+        显示 macOS 系统通知。
+        优先使用新版 UNUserNotificationCenter（macOS 10.14+），
+        旧版 API 已废弃且在新系统上返回 None。
+        :param title: 通知标题
+        :param message: 通知内容
+        """
+        try:
+            # 使用新版 UserNotifications framework
+            import UserNotifications
+            center = UserNotifications.UNUserNotificationCenter.currentNotificationCenter()
+
+            # 请求通知权限
+            def request_handler(granted, error):
+                if not granted:
+                    print(f"[StatusBarApp] 通知权限未授予，改用菜单提示")
+                    return
+
+            center.requestAuthorizationWithOptions_completionHandler_(
+                UserNotifications.UNAuthorizationOptionAlert,
+                request_handler
+            )
+
+            # 构建通知内容
+            content = UserNotifications.UNMutableNotificationContent.alloc().init()
+            content.setTitle_(title)
+            content.setBody_(message)
+
+            # 立即触发
+            trigger = None
+            import uuid
+            request = UserNotifications.UNNotificationRequest.requestWithIdentifier_content_trigger_(
+                str(uuid.uuid4()), content, trigger
+            )
+            center.addNotificationRequest_withCompletionHandler_(request, None)
+
+        except Exception as e:
+            # 通知失败时降级为菜单项临时提示
+            print(f"[StatusBarApp] 显示通知失败：{e}，改用菜单标题提示")
+            self._show_menu_alert(message)
+
+    def _show_menu_alert(self, message: str) -> None:
+        """
+        在 omo 菜单项右侧持续显示警告提示，直到切换成功才清除。
+        :param message: 要显示的提示文字
+        """
+        try:
+            self.menu_item_omo.setTitle_(f"omo  ⚠️ {message}")
+            print(f"[StatusBarApp] omo 菜单项显示警告：{message}")
+        except Exception as e:
+            print(f"[StatusBarApp] 菜单提示失败：{e}")
+
+    def _clear_menu_alert(self) -> None:
+        """切换成功后清除 omo 菜单项的警告提示，恢复原始标题。"""
+        try:
+            self.menu_item_omo.setTitle_("omo")
+            print("[StatusBarApp] omo 菜单项警告已清除")
+        except Exception as e:
+            print(f"[StatusBarApp] 清除菜单提示失败：{e}")
 
     def menuWillOpen_(self, menu) -> None:
         """
