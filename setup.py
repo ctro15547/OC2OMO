@@ -34,9 +34,9 @@ OPTIONS = {
     "argv_emulation": False,
     "plist": {
         "LSUIElement": True,
-        "CFBundleName": "cc2omo",
-        "CFBundleDisplayName": "cc2omo",
-        "CFBundleIdentifier": "com.local.cc2omo",
+        "CFBundleName": "oc2omo",
+        "CFBundleDisplayName": "oc2omo",
+        "CFBundleIdentifier": "com.local.oc2omo",
         "CFBundleVersion": "1.0.0",
         "CFBundleShortVersionString": "1.0.0",
         "NSHighResolutionCapable": True,
@@ -47,7 +47,7 @@ OPTIONS = {
 }
 
 setup(
-    name="cc2omo",
+    name="oc2omo",
     app=APP,
     data_files=DATA_FILES,
     options={"py2app": OPTIONS},
