@@ -1,0 +1,9 @@
+# macbar-omo-tool 依赖清单
+# requires: pyobjc-framework-Cocoa>=9.0
+pyobjc-framework-Cocoa
+
+# requires: pytest>=7.0
+pytest>=7.0
+
+# requires: hypothesis>=6.0
+hypothesis>=6.0

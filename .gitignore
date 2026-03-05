@@ -1,0 +1,19 @@
+# 构建产物
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+
+# 开发日志
+ai_dev_log.md

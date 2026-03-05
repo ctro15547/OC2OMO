@@ -1,0 +1,358 @@
+"""
+状态栏应用主体
+负责创建 macOS 状态栏图标、构建菜单、协调各模块
+"""
+# requires: pyobjc-framework-Cocoa>=9.0
+
+from AppKit import (
+    NSApplication,
+    NSStatusBar,
+    NSMenu,
+    NSMenuItem,
+    NSOpenPanel,
+    NSOnState,
+    NSOffState,
+    NSImage,
+    NSBezierPath,
+    NSColor,
+    NSFont,
+    NSString,
+    NSAttributedString,
+    NSMakeRect,
+    NSMakeSize,
+    NSForegroundColorAttributeName,
+    NSFontAttributeName,
+)
+from Foundation import NSMutableDictionary
+
+from config_reader import ConfigReader
+from plugin_detector import PluginDetector
+from mode_switcher import ModeSwitcher
+
+
+class StatusBarApp:
+    """macOS 状态栏应用主体"""
+
+    def __init__(self):
+        """
+        初始化应用：
+        - 创建 NSApplication 和状态栏图标
+        - 初始化各功能模块
+        - 执行启动自动检测
+        - 构建菜单
+        """
+        try:
+            # 创建 macOS 应用实例
+            self.app = NSApplication.sharedApplication()
+
+            # 创建状态栏图标，-1 表示自动宽度
+            self.status_item = NSStatusBar.systemStatusBar().statusItemWithLength_(-1)
+            # 用代码绘制"实心方块镂空C"图标
+            icon = self._make_icon()
+            if icon:
+                self.status_item.button().setImage_(icon)
+            else:
+                self.status_item.setTitle_("C")
+
+            # 初始化各功能模块
+            self.config_reader = ConfigReader()
+            self.plugin_detector = PluginDetector()
+            self.mode_switcher = ModeSwitcher(self.config_reader, self.plugin_detector)
+
+            # 启动时自动检测插件状态（菜单项尚未创建，_auto_detect 内部用 hasattr 保护）
+            self._auto_detect()
+
+            # 构建菜单
+            self.build_menu()
+
+        except Exception as e:
+            print(f"[StatusBarApp] 初始化失败：{e}")
+
+    def build_menu(self) -> None:
+        """
+        构建下拉菜单，顺序：
+        1. 版本标签（不可点击）
+        2. 分隔线
+        3. 路径输入框（NSTextField 嵌入 NSMenuItem）
+        4. 分隔线
+        5. cc 单选项
+        6. omo 单选项
+        """
+        try:
+            menu = NSMenu.alloc().init()
+            # 设置菜单 delegate 为 self，以便在 menuWillOpen_ 中让输入框获得焦点
+            menu.setDelegate_(self)
+
+            # --- 1. 版本标签（不可点击）---
+            version_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "omo版本：None", None, ""
+            )
+            menu.addItem_(version_item)
+            self.menu_item_version = version_item
+
+            # --- 1b. cc 模式提示（cc 时显示，omo 时隐藏）---
+            hint_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "⚠️ 升级 omo 请先切换到 omo 模式", None, ""
+            )
+            hint_item.setEnabled_(False)   # 灰色不可点击，仅作提示
+            menu.addItem_(hint_item)
+            self.menu_item_hint = hint_item
+
+            # --- 2. 分隔线 ---
+            menu.addItem_(NSMenuItem.separatorItem())
+
+            # --- 3. 选择配置文件路径（点击弹出访达文件选择面板）---
+            path_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "📂 选择 opencode.json…", "onSelectPath:", ""
+            )
+            path_item.setTarget_(self)
+            menu.addItem_(path_item)
+            self.menu_item_path = path_item
+
+            # --- 3b. 快捷键提示（灰色不可点击）---
+            tip_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "  ⌘⇧G 可在面板中快速输入路径", None, ""
+            )
+            tip_item.setEnabled_(False)
+            menu.addItem_(tip_item)
+
+            # --- 4. 分隔线 ---
+            menu.addItem_(NSMenuItem.separatorItem())
+
+            # --- 5. cc 单选项 ---
+            cc_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "cc", "onModeSwitch:", ""
+            )
+            cc_item.setTarget_(self)
+            menu.addItem_(cc_item)
+            self.menu_item_cc = cc_item
+
+            # --- 6. omo 单选项 ---
+            omo_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "omo", "onModeSwitch:", ""
+            )
+            omo_item.setTarget_(self)
+            menu.addItem_(omo_item)
+            self.menu_item_omo = omo_item
+
+            # --- 7. 分隔线 ---
+            menu.addItem_(NSMenuItem.separatorItem())
+
+            # --- 8. 退出按钮 ---
+            quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "退出", "onQuit:", "q"
+            )
+            quit_item.setTarget_(self)
+            menu.addItem_(quit_item)
+
+            # 将菜单绑定到状态栏图标
+            self.status_item.setMenu_(menu)
+
+            # 菜单构建完成后，根据已检测的状态更新菜单显示
+            self._auto_detect()
+
+        except Exception as e:
+            print(f"[StatusBarApp] 构建菜单失败：{e}")
+
+    def update_version_label(self, version: "str | None") -> None:
+        """
+        更新版本标签显示。
+        格式：'omo版本：{version}'，version 为 None 时显示 'omo版本：None'。
+        :param version: 版本号字符串或 None
+        """
+        try:
+            label = f"omo版本：{version}"
+            self.menu_item_version.setTitle_(label)
+        except Exception as e:
+            print(f"[StatusBarApp] 更新版本标签失败：{e}")
+
+    def onModeSwitch_(self, sender) -> None:
+        """
+        单选项点击回调（ObjC selector 格式）。
+        根据点击的菜单项标题调用对应的模式切换方法，
+        并更新单选状态和版本标签。
+        :param sender: 触发事件的 NSMenuItem
+        """
+        try:
+            title = sender.title()
+
+            if title == "cc":
+                self.mode_switcher.switch_to_cc()
+            elif title == "omo":
+                self.mode_switcher.switch_to_omo()
+
+            # 更新单选状态：被点击项选中，另一项取消选中
+            if title == "cc":
+                self.menu_item_cc.setState_(NSOnState)
+                self.menu_item_omo.setState_(NSOffState)
+            elif title == "omo":
+                self.menu_item_omo.setState_(NSOnState)
+                self.menu_item_cc.setState_(NSOffState)
+
+            # 切换后重新检测版本并更新标签和提示行
+            plugin_list = self.config_reader.get_plugin_list()
+            omo_entry = PluginDetector.find_omo_plugin(plugin_list)
+            if omo_entry:
+                version = PluginDetector.extract_version(omo_entry)
+                self.update_version_label(version)
+                self.menu_item_hint.setHidden_(True)
+            else:
+                self.update_version_label(None)
+                self.menu_item_hint.setHidden_(False)
+
+        except Exception as e:
+            print(f"[StatusBarApp] 模式切换回调失败：{e}")
+
+    def controlTextDidEndEditing_(self, notification) -> None:
+        """
+        路径输入框编辑完成回调（NSTextField delegate）。
+        获取新路径，更新 ConfigReader，并重新执行自动检测。
+        :param notification: NSNotification 对象
+        """
+        try:
+            new_path = notification.object().stringValue()
+            print(f"[StatusBarApp] 配置路径已更新：{new_path}")
+            self.config_reader.set_config_path(new_path)
+            # 重新检测并更新菜单状态
+            self._auto_detect()
+        except Exception as e:
+            print(f"[StatusBarApp] 路径变更回调失败：{e}")
+
+    def _make_icon(self) -> "NSImage | None":
+        """
+        绘制状态栏图标：透明背景，黑色实心字母 C 居中。
+        使用 template 模式让 macOS 自动适配深色/浅色主题。
+        """
+        try:
+            size = 18.0
+            image = NSImage.alloc().initWithSize_(NSMakeSize(size, size))
+            image.lockFocus()
+
+            # 清空为透明背景
+            NSColor.clearColor().setFill()
+            NSBezierPath.fillRect_(NSMakeRect(0, 0, size, size))
+
+            # 绘制黑色加粗字母 C，居中
+            attrs = NSMutableDictionary.dictionary()
+            attrs[NSFontAttributeName] = NSFont.boldSystemFontOfSize_(14.0)
+            attrs[NSForegroundColorAttributeName] = NSColor.blackColor()
+
+            letter = NSString.stringWithString_("C")
+            attr_str = NSAttributedString.alloc().initWithString_attributes_(letter, attrs)
+
+            letter_size = attr_str.size()
+            x = (size - letter_size.width) / 2.0
+            y = (size - letter_size.height) / 2.0
+            attr_str.drawAtPoint_((x, y))
+
+            image.unlockFocus()
+
+            # template 模式：macOS 自动将黑色像素在深色模式下反转为白色
+            image.setTemplate_(True)
+            return image
+
+        except Exception as e:
+            print(f"[StatusBarApp] 绘制图标失败：{e}")
+            return None
+
+    def _auto_detect(self) -> None:
+        """
+        启动时自动检测流程：
+        1. 读取 plugin 列表
+        2. 检测 oh-my-opencode 插件
+        3. 根据检测结果更新版本标签和单选状态
+        注意：菜单项可能尚未创建，使用 hasattr 保护
+        """
+        try:
+            plugin_list = self.config_reader.get_plugin_list()
+            omo_entry = PluginDetector.find_omo_plugin(plugin_list)
+
+            if omo_entry is not None:
+                # 检测到 omo 插件：写入备份文件，更新版本标签，选中 omo
+                config_dir = self.mode_switcher.config_dir
+                PluginDetector.save_plugin_entry(config_dir, omo_entry)
+
+                version = PluginDetector.extract_version(omo_entry)
+
+                # 菜单项存在时才更新 UI
+                if hasattr(self, "menu_item_version"):
+                    self.update_version_label(version)
+                if hasattr(self, "menu_item_hint"):
+                    # omo 模式下隐藏提示行
+                    self.menu_item_hint.setHidden_(True)
+                if hasattr(self, "menu_item_omo"):
+                    self.menu_item_omo.setState_(NSOnState)
+                if hasattr(self, "menu_item_cc"):
+                    self.menu_item_cc.setState_(NSOffState)
+            else:
+                # 未检测到 omo 插件：版本显示 None，选中 cc，显示提示行
+                if hasattr(self, "menu_item_version"):
+                    self.update_version_label(None)
+                if hasattr(self, "menu_item_hint"):
+                    # cc 模式下显示升级提示
+                    self.menu_item_hint.setHidden_(False)
+                if hasattr(self, "menu_item_cc"):
+                    self.menu_item_cc.setState_(NSOnState)
+                if hasattr(self, "menu_item_omo"):
+                    self.menu_item_omo.setState_(NSOffState)
+
+        except Exception as e:
+            print(f"[StatusBarApp] 自动检测失败：{e}")
+
+    def menuWillOpen_(self, menu) -> None:
+        """
+        菜单即将显示时的回调（NSMenu delegate）。
+        手动让路径输入框获得焦点，解决菜单内 NSTextField 无法输入的问题。
+        """
+        try:
+            if hasattr(self, "path_field"):
+                # 让窗口将第一响应者设为输入框
+                self.app.mainWindow()
+                self.path_field.window()
+                # 通过 NSApp 的 keyWindow 让输入框成为第一响应者
+                from AppKit import NSApp
+                key_win = NSApp.keyWindow()
+                if key_win:
+                    key_win.makeFirstResponder_(self.path_field)
+        except Exception as e:
+            print(f"[StatusBarApp] menuWillOpen_ 回调失败：{e}")
+
+    def onSelectPath_(self, sender) -> None:
+        """
+        点击"选择 opencode.json"菜单项时弹出访达文件选择面板。
+        用户选择文件后更新 ConfigReader 路径并重新检测。
+        """
+        try:
+            panel = NSOpenPanel.openPanel()
+            panel.setTitle_("选择 opencode.json")
+            panel.setMessage_("请选择 opencode 配置文件")
+            panel.setAllowedFileTypes_(["json"])
+            panel.setAllowsMultipleSelection_(False)
+            panel.setCanChooseDirectories_(False)
+            panel.setCanChooseFiles_(True)
+
+            # 以模态方式运行面板（1 = NSModalResponseOK）
+            result = panel.runModal()
+            if result == 1:
+                selected_path = panel.URL().path()
+                print(f"[StatusBarApp] 用户选择配置文件：{selected_path}")
+                self.config_reader.set_config_path(selected_path)
+                # 更新菜单项标题，显示当前选中的文件名
+                import os
+                filename = os.path.basename(selected_path)
+                self.menu_item_path.setTitle_(f"📂 {filename}")
+                # 重新检测插件状态
+                self._auto_detect()
+        except Exception as e:
+            print(f"[StatusBarApp] 选择配置文件失败：{e}")
+
+    def onQuit_(self, sender) -> None:
+        """退出按钮回调，终止应用"""
+        NSApplication.sharedApplication().terminate_(None)
+
+    def run(self) -> None:
+        """启动应用主循环"""
+        try:
+            NSApplication.sharedApplication().run()
+        except Exception as e:
+            print(f"[StatusBarApp] 应用运行失败：{e}")
