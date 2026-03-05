@@ -1,12 +1,12 @@
-# cc2omo - opencode 插件模式切换工具
+# oc2omo - opencode 插件模式切换工具
 
-macOS 状态栏工具，用于快速切换 opencode 的插件配置模式（cc / omo）。
+macOS 状态栏工具，用于快速切换 opencode 的插件配置模式（oc / omo）。
 
 ## 功能
 
 - **状态栏图标**：在 macOS 状态栏显示黑色字母 C 图标，点击展开菜单
 - **版本显示**：实时显示当前 oh-my-opencode 插件版本
-- **模式切换**：一键在 cc 模式和 omo 模式之间切换
+- **模式切换**：一键在 oc 模式和 omo 模式之间切换
 - **配置管理**：通过访达文件选择器选择 opencode.json 配置文件
 - **自动检测**：启动时自动检测当前插件状态并更新菜单显示
 - **快捷菜单**：提示用户在文件选择面板中可用 ⌘⇧G 快速输入路径
@@ -59,7 +59,7 @@ python setup.py py2app
 **3. 验证打包结果**
 
 ```bash
-dist/cc2omo.app/Contents/MacOS/cc2omo
+dist/oc2omo.app/Contents/MacOS/oc2omo
 ```
 
 如果看到状态栏出现 C 图标，说明打包成功。
@@ -67,18 +67,18 @@ dist/cc2omo.app/Contents/MacOS/cc2omo
 **4. 移到应用程序文件夹（可选）**
 
 ```bash
-cp -r dist/cc2omo.app /Applications/
+cp -r dist/oc2omo.app /Applications/
 ```
 
-之后可以从 Spotlight 搜索 `cc2omo` 或在访达中直接双击启动。
+之后可以从 Spotlight 搜索 `oc2omo` 或在访达中直接双击启动。
 
 ## 菜单项说明
 
 - **omo版本**：显示当前 oh-my-opencode 版本，未检测到时显示 None
-- **⚠️ 升级 omo 请先切换到 omo 模式**：cc 模式下的提示（omo 模式自动隐藏）
+- **⚠️ 升级 omo 请先切换到 omo 模式**：oc 模式下的提示（omo 模式自动隐藏）
 - **📂 选择 opencode.json…**：点击弹出文件选择面板，选择配置文件
 - **⌘⇧G 可在面板中快速输入路径**：文件选择面板的快捷键提示
-- **cc / omo**：单选项，切换插件模式
+- **oc / omo**：单选项，切换插件模式
 - **退出**：关闭应用（快捷键 ⌘Q）
 
 ## 项目结构
