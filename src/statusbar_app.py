@@ -4,6 +4,9 @@
 """
 # requires: pyobjc-framework-Cocoa>=9.0
 
+import os
+import subprocess
+
 from AppKit import (
     NSApplication,
     NSStatusBar,
@@ -138,7 +141,22 @@ class StatusBarApp:
             # --- 7. 分隔线 ---
             menu.addItem_(NSMenuItem.separatorItem())
 
-            # --- 8. 退出按钮 ---
+            # --- 8. 开机启动勾选项 ---
+            is_enabled = self._is_launch_at_startup_enabled()
+            startup_title = f"开机启动 {'✅' if is_enabled else '❌'}"
+            startup_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                startup_title, "onToggleStartup:", ""
+            )
+            startup_item.setTarget_(self)
+            # 已启用时显示勾选状态
+            startup_item.setState_(NSOnState if is_enabled else NSOffState)
+            menu.addItem_(startup_item)
+            self.menu_item_startup = startup_item
+
+            # --- 9. 分隔线 ---
+            menu.addItem_(NSMenuItem.separatorItem())
+
+            # --- 10. 退出按钮 ---
             quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
                 "退出", "onQuit:", "q"
             )
@@ -421,7 +439,6 @@ class StatusBarApp:
                 print(f"[StatusBarApp] 用户选择配置文件：{selected_path}")
                 self.config_reader.set_config_path(selected_path)
                 # 更新菜单项标题，显示当前选中的文件名
-                import os
                 filename = os.path.basename(selected_path)
                 self.menu_item_path.setTitle_(f"📂 {filename}")
                 # 重新检测插件状态
@@ -432,6 +449,118 @@ class StatusBarApp:
     def onQuit_(self, sender) -> None:
         """退出按钮回调，终止应用"""
         NSApplication.sharedApplication().terminate_(None)
+
+    def _get_launchagent_path(self) -> str:
+        """返回 LaunchAgent plist 文件路径"""
+        return os.path.expanduser("~/Library/LaunchAgents/com.local.oc2omo.plist")
+
+    def _get_app_executable(self) -> str:
+        """
+        获取当前应用的可执行文件路径。
+        打包后为 .app 内的二进制，直接运行时为 python 解释器路径。
+        """
+        import sys
+        executable = sys.executable
+        # 打包成 .app 后，executable 指向 .app 内的二进制
+        # 尝试找到 .app bundle 的实际可执行文件
+        bundle_exec = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(executable))),
+            "MacOS", "oc2omo"
+        )
+        if os.path.exists(bundle_exec):
+            return bundle_exec
+        return executable
+
+    def _is_launch_at_startup_enabled(self) -> bool:
+        """检查开机启动是否已启用（plist 文件是否存在）"""
+        return os.path.exists(self._get_launchagent_path())
+
+    def _enable_launch_at_startup(self) -> bool:
+        """
+        启用开机启动：生成 LaunchAgent plist 并注册到 launchctl。
+        返回是否成功。
+        """
+        try:
+            import subprocess
+            plist_path = self._get_launchagent_path()
+            exec_path = self._get_app_executable()
+
+            # 生成 plist 内容
+            plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.local.oc2omo</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exec_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+</dict>
+</plist>"""
+            # 确保目录存在
+            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
+
+            with open(plist_path, "w", encoding="utf-8") as f:
+                f.write(plist_content)
+
+            # 注册到 launchctl
+            subprocess.run(["launchctl", "load", plist_path], check=True)
+            print(f"[StatusBarApp] 开机启动已启用：{plist_path}")
+            return True
+
+        except Exception as e:
+            print(f"[StatusBarApp] 启用开机启动失败：{e}")
+            return False
+
+    def _disable_launch_at_startup(self) -> bool:
+        """
+        禁用开机启动：从 launchctl 卸载并删除 plist 文件。
+        返回是否成功。
+        """
+        try:
+            import subprocess
+            plist_path = self._get_launchagent_path()
+
+            if os.path.exists(plist_path):
+                subprocess.run(["launchctl", "unload", plist_path], check=True)
+                os.remove(plist_path)
+
+            print("[StatusBarApp] 开机启动已禁用")
+            return True
+
+        except Exception as e:
+            print(f"[StatusBarApp] 禁用开机启动失败：{e}")
+            return False
+
+    def onToggleStartup_(self, sender) -> None:
+        """
+        开机启动勾选项点击回调。
+        当前已启用则禁用，未启用则启用，并更新菜单项状态。
+        """
+        try:
+            is_enabled = self._is_launch_at_startup_enabled()
+
+            if is_enabled:
+                success = self._disable_launch_at_startup()
+                new_state = False
+            else:
+                success = self._enable_launch_at_startup()
+                new_state = True
+
+            if success:
+                # 更新菜单项标题和勾选状态
+                self.menu_item_startup.setTitle_(f"开机启动 {'✅' if new_state else '❌'}")
+                self.menu_item_startup.setState_(NSOnState if new_state else NSOffState)
+            else:
+                print("[StatusBarApp] 开机启动切换失败，状态未变更")
+
+        except Exception as e:
+            print(f"[StatusBarApp] 开机启动切换回调失败：{e}")
 
     def run(self) -> None:
         """启动应用主循环"""
